@@ -1,0 +1,26 @@
+[package]
+name = "proto"
+version = "0.1.0"
+edition = "2024"
+description = "Shared protocol types and serialization helpers for qpad"
+license = "MIT OR Apache-2.0"
+
+# ── Features ──────────────────────────────────────────────────────────────────
+#
+# json (default)  — UTF-8 JSON via serde_json.  Used for browser clients and
+#                   during development.  Enable this feature for debug builds.
+#
+# (no json)       — Compact binary via postcard.  For native clients and
+#                   release builds.  Disable default features to use postcard:
+#                   proto = { workspace = true, default-features = false }
+
+[features]
+default = ["json"]
+json    = ["dep:serde_json"]
+
+[dependencies]
+serde      = { version = "1.0", features = ["derive"] }
+uuid       = { workspace = true }
+thiserror  = "2"
+postcard   = { version = "1.0", features = ["use-std"] }
+serde_json = { version = "1.0", optional = true }

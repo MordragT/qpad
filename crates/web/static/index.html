@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+        <title>qpad</title>
+        <style>
+            *,
+            *::before,
+            *::after {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
+
+            html,
+            body {
+                height: 100%;
+                overflow: hidden;
+                background: #0d1117;
+                color: #e6edf3;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+                touch-action: none;
+                user-select: none;
+                -webkit-user-select: none;
+            }
+
+            /* ── Status bar ─────────────────────────────────────────────────────────── */
+
+            #bar {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                padding: 0 12px;
+                height: 48px;
+                background: #161b22;
+                border-bottom: 1px solid #21262d;
+            }
+            #dot {
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                background: #484f58;
+                flex-shrink: 0;
+                transition: background 200ms;
+            }
+            #dot.on {
+                background: #3fb950;
+            }
+            #bar-label {
+                flex: 1;
+                font-size: 13px;
+                color: #8b949e;
+            }
+            #name {
+                background: #21262d;
+                border: 1px solid #30363d;
+                color: #e6edf3;
+                padding: 4px 8px;
+                border-radius: 6px;
+                font-size: 13px;
+                width: 100px;
+            }
+            #name:focus {
+                outline: none;
+                border-color: #388bfd;
+            }
+            #btn-connect {
+                background: #238636;
+                border: none;
+                color: #e6edf3;
+                padding: 5px 12px;
+                border-radius: 6px;
+                font-size: 13px;
+                cursor: pointer;
+                white-space: nowrap;
+                -webkit-tap-highlight-color: transparent;
+            }
+            #btn-connect.off {
+                background: #21262d;
+                color: #8b949e;
+                cursor: default;
+            }
+
+            /* ── Gamepad layout ─────────────────────────────────────────────────────── */
+
+            #pad {
+                display: flex;
+                align-items: center;
+                justify-content: space-around;
+                padding: 16px;
+                height: calc(100vh - 48px);
+                max-width: 700px;
+                margin: 0 auto;
+            }
+
+            /* 3×3 grid used for both d-pad and face buttons */
+            .cluster {
+                display: grid;
+                grid-template:
+                    ".  u  ." 1fr
+                    "l  c  r" 1fr
+                    ".  d  ." 1fr
+                    / 1fr 1fr 1fr;
+                gap: 6px;
+                width: min(42vw, 160px);
+                height: min(42vw, 160px);
+            }
+            .g-u {
+                grid-area: u;
+            }
+            .g-d {
+                grid-area: d;
+            }
+            .g-l {
+                grid-area: l;
+            }
+            .g-r {
+                grid-area: r;
+            }
+
+            .pad-btn {
+                border: none;
+                border-radius: 10px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: clamp(16px, 4vw, 22px);
+                font-weight: 700;
+                background: #21262d;
+                color: #c9d1d9;
+                cursor: pointer;
+                -webkit-tap-highlight-color: transparent;
+                transition:
+                    background 60ms,
+                    transform 60ms;
+            }
+            .pad-btn.active {
+                background: #388bfd;
+                transform: scale(0.92);
+            }
+
+            /* face-button accent colours */
+            .c-a {
+                color: #3fb950;
+            }
+            .c-b {
+                color: #f85149;
+            }
+            .c-x {
+                color: #58a6ff;
+            }
+            .c-y {
+                color: #e3b341;
+            }
+
+            /* ── Centre buttons (Start / Select) ─────────────────────────────────── */
+
+            #mid {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 10px;
+            }
+            .sys-btn {
+                background: #21262d;
+                border: none;
+                border-radius: 16px;
+                color: #8b949e;
+                font-size: 11px;
+                padding: 7px 16px;
+                cursor: pointer;
+                -webkit-tap-highlight-color: transparent;
+                transition: background 60ms;
+            }
+            .sys-btn.active {
+                background: #388bfd;
+                color: #e6edf3;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="bar">
+            <span id="dot"></span>
+            <span id="bar-label">disconnected</span>
+            <input id="name" type="text" placeholder="Name" maxlength="24" />
+            <button id="btn-connect">Connect</button>
+        </div>
+
+        <div id="pad">
+            <!-- Left cluster: D-pad -->
+            <div class="cluster" role="group" aria-label="D-pad">
+                <button class="pad-btn g-u" data-bit="64" aria-label="Up">▲</button>
+                <button class="pad-btn g-d" data-bit="128" aria-label="Down">▼</button>
+                <button class="pad-btn g-l" data-bit="256" aria-label="Left">◀</button>
+                <button class="pad-btn g-r" data-bit="512" aria-label="Right">▶</button>
+            </div>
+
+            <!-- Centre: Select / Start -->
+            <div id="mid">
+                <button class="sys-btn" data-bit="32" aria-label="Select">⊟ Select</button>
+                <button class="sys-btn" data-bit="16" aria-label="Start">⊞ Start</button>
+            </div>
+
+            <!-- Right cluster: face buttons (Xbox layout) -->
+            <!--   Y(top) / X(left) A(bottom) B(right)      -->
+            <div class="cluster" role="group" aria-label="Face buttons">
+                <button class="pad-btn g-u c-y" data-bit="4" aria-label="Y">Y</button>
+                <button class="pad-btn g-d c-a" data-bit="1" aria-label="A">A</button>
+                <button class="pad-btn g-l c-x" data-bit="8" aria-label="X">X</button>
+                <button class="pad-btn g-r c-b" data-bit="2" aria-label="B">B</button>
+            </div>
+        </div>
+
+        <script>
+            (function () {
+                "use strict";
+
+                // ── DOM refs ──────────────────────────────────────────────────────────────
+                const dot = document.getElementById("dot");
+                const barLabel = document.getElementById("bar-label");
+                const nameEl = document.getElementById("name");
+                const connectBtn = document.getElementById("btn-connect");
+                const allBtns = [...document.querySelectorAll("[data-bit]")];
+
+                // ── State ─────────────────────────────────────────────────────────────────
+                let ws = null;
+                let clientId = crypto.randomUUID();
+                let seq = 0;
+                let buttons = 0; // current bitmask of pressed buttons
+
+                // ── Status helpers ────────────────────────────────────────────────────────
+                function setStatus(text, on) {
+                    barLabel.textContent = text;
+                    dot.className = on ? "on" : "";
+                }
+
+                // ── Input sending ─────────────────────────────────────────────────────────
+                function sendInput() {
+                    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+                    ws.send(
+                        JSON.stringify({
+                            Input: {
+                                client_id: clientId,
+                                seq: ++seq,
+                                buttons,
+                                axes: [],
+                                ts_millis: Date.now(),
+                            },
+                        }),
+                    );
+                }
+
+                // ── Button wiring (pointer events for unified mouse + touch) ──────────────
+                allBtns.forEach(function (btn) {
+                    var bit = Number(btn.dataset.bit);
+
+                    function press(e) {
+                        e.preventDefault();
+                        buttons |= bit;
+                        btn.classList.add("active");
+                        sendInput();
+                    }
+                    function release(e) {
+                        e.preventDefault();
+                        if (!(buttons & bit)) return; // already released
+                        buttons &= ~bit;
+                        btn.classList.remove("active");
+                        sendInput();
+                    }
+
+                    btn.addEventListener("pointerdown", press);
+                    btn.addEventListener("pointerup", release);
+                    btn.addEventListener("pointerleave", release);
+                    btn.addEventListener("pointercancel", release);
+                });
+
+                // ── WebSocket connection ──────────────────────────────────────────────────
+                function connect() {
+                    if (ws) return;
+
+                    var scheme = location.protocol === "https:" ? "wss" : "ws";
+                    var url = scheme + "://" + location.host + "/ws";
+
+                    ws = new WebSocket(url);
+
+                    ws.onopen = function () {
+                        setStatus("connected", true);
+                        connectBtn.className = "off";
+                        connectBtn.textContent = "Connected";
+                        ws.send(
+                            JSON.stringify({
+                                Register: {
+                                    client_id: clientId,
+                                    name: nameEl.value.trim() || "player",
+                                },
+                            }),
+                        );
+                    };
+
+                    ws.onclose = function () {
+                        setStatus("disconnected", false);
+                        connectBtn.className = "";
+                        connectBtn.textContent = "Connect";
+                        // Release any held buttons on disconnect.
+                        buttons = 0;
+                        allBtns.forEach(function (b) {
+                            b.classList.remove("active");
+                        });
+                        ws = null;
+                    };
+
+                    ws.onerror = function () {
+                        setStatus("connection error", false);
+                    };
+
+                    // Server sends roster updates; ignore them on the controller page.
+                    ws.onmessage = function () {};
+                }
+
+                connectBtn.addEventListener("click", connect);
+                nameEl.addEventListener("keydown", function (e) {
+                    if (e.key === "Enter") connect();
+                });
+
+                // Auto-connect when the page is opened via QR scan (?s=<sessionId>).
+                if (new URLSearchParams(location.search).get("s")) {
+                    setTimeout(connect, 200);
+                }
+            })();
+        </script>
+    </body>
+</html>

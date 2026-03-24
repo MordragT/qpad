@@ -1,0 +1,16 @@
+[workspace]
+members  = ["crates/proto", "crates/web", "crates/launcher"]
+resolver = "2"
+
+# ── Shared dependencies ───────────────────────────────────────────────────────
+#
+# Only list dependencies that are used by two or more workspace members here.
+# Crate-specific dependencies (axum, eframe, evdevil, ureq, …) belong in each
+# crate's own Cargo.toml so that the dependency graph stays explicit and the
+# version only needs updating in one place.
+
+[workspace.dependencies]
+proto              = { path = "crates/proto" }
+uuid               = { version = "1.3", features = ["v4", "serde"] }
+tracing            = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
