@@ -1,77 +1,124 @@
 //! qpad launcher
 //!
 //! A full-screen egui window that:
-//! - Displays a QR code pointing at the local qpad web server.
+//! - Auto-detects the machine's LAN IP and encodes a session URL as a QR code.
 //! - Shows which controller clients are currently connected.
 //! - Optionally launches a game executable when all players are ready.
 //!
 //! # Usage
 //!
-//! ```
-//! qpad-launcher [/path/to/game]
-//! ```
+//! ```text
+//! qpad-launcher [OPTIONS] [GAME]
 //!
-//! If a game path is provided, a *Launch Game* button is shown.  Clicking it
-//! spawns the game process and sends `POST /api/game/start` to notify all
-//! connected controllers.
+//! Arguments:
+//!   [GAME]  Path to game executable (enables the Launch Game button)
+//!
+//! Options:
+//!   -p, --port <PORT>  Port the qpad web server is listening on [default: 3000]
+//!      --host <IP>    Override the advertised server IP in the QR code
+//!   -h, --help         Print help
+//!   -V, --version      Print version
+//! ```
 
-use std::{path::PathBuf, sync::mpsc, time::Duration};
+use std::{net::IpAddr, path::PathBuf, sync::mpsc, time::Duration};
 
+use clap::Parser;
 use eframe::egui;
 use qrcode::{QrCode, render::unicode};
 use tracing::warn;
 use uuid::Uuid;
 
-/// Hard-coded address of the local qpad web server.
-const SERVER_ADDR: &str = "127.0.0.1:3000";
+// ── CLI ───────────────────────────────────────────────────────────────────────
+
+#[derive(Parser)]
+#[command(
+    name = "qpad-launcher",
+    version,
+    about = "qpad launcher — displays a QR code and manages the game session"
+)]
+struct Args {
+    /// Port the qpad web server is listening on.
+    #[arg(short, long, default_value_t = 3000)]
+    port: u16,
+
+    /// Override the advertised server IP shown in the QR code.
+    /// Defaults to the auto-detected LAN IP of this machine.
+    #[arg(long, value_name = "IP")]
+    host: Option<String>,
+
+    /// Path to game executable (enables the Launch Game button).
+    game: Option<PathBuf>,
+}
+
+// ── LAN IP detection ──────────────────────────────────────────────────────────
+
+/// Detect the machine's primary LAN IP address.
+///
+/// Opens a UDP socket and "connects" it to an external address.  No packet is
+/// ever sent — the OS just selects the outbound interface, which lets us read
+/// back the local address for that route.  Works offline and on any platform.
+fn detect_lan_ip() -> Option<IpAddr> {
+    let sock = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    // Port 53 (DNS) — any routable destination works.
+    sock.connect("8.8.8.8:53").ok()?;
+    Some(sock.local_addr().ok()?.ip())
+}
 
 // ── App state ─────────────────────────────────────────────────────────────────
 
 struct LauncherApp {
-    /// Full session URL encoded in the QR code.
-    url: String,
+    /// Full URL encoded in the QR code (uses the LAN IP so phones can reach it).
+    qr_url: String,
     /// Pre-rendered Unicode QR code; `None` if generation failed.
     qr: Option<String>,
+    /// Base URL for internal API calls — always loopback so it works
+    /// regardless of which interface the server is bound to.
+    api_base: String,
     /// Latest roster snapshot from the background poll thread.
     connected: Vec<proto::ClientInfo>,
     /// Receive-end of the background roster-polling channel.
     roster_rx: mpsc::Receiver<Vec<proto::ClientInfo>>,
-    /// Optional path to the game executable passed as a CLI argument.
+    /// Optional path to the game executable.
     game_exe: Option<PathBuf>,
 }
 
 impl LauncherApp {
-    fn new(cc: &eframe::CreationContext, game_exe: Option<PathBuf>) -> Self {
+    fn new(
+        cc: &eframe::CreationContext,
+        api_base: String,
+        qr_url: String,
+        game_exe: Option<PathBuf>,
+    ) -> Self {
         cc.egui_ctx.set_zoom_factor(1.5);
         cc.egui_ctx.set_visuals(egui::Visuals::dark());
 
-        // Generate a unique session URL once — it never changes.
-        let url = format!("http://{}/?s={}", SERVER_ADDR, Uuid::new_v4());
-        let qr = QrCode::new(url.as_bytes())
+        let qr = QrCode::new(qr_url.as_bytes())
             .ok()
             .map(|c| c.render::<unicode::Dense1x2>().build());
 
         // Background thread: polls /api/roster every 2 s and wakes the UI.
         let (roster_tx, roster_rx) = mpsc::channel::<Vec<proto::ClientInfo>>();
         let repaint = cc.egui_ctx.clone();
+        let poll_base = api_base.clone();
 
         std::thread::spawn(move || {
             loop {
-                if let Some(clients) = poll_roster() {
+                if let Some(clients) = poll_roster(&poll_base) {
                     if roster_tx.send(clients).is_err() {
                         break; // receiver dropped — main window closed
                     }
                     repaint.request_repaint();
                 } else {
-                    warn!("roster poll failed — is the web server running at {SERVER_ADDR}?");
+                    warn!("roster poll failed — is qpad-web running at {poll_base}?");
                 }
                 std::thread::sleep(Duration::from_secs(2));
             }
         });
 
         Self {
-            url,
+            qr_url,
             qr,
+            api_base,
             connected: Vec::new(),
             roster_rx,
             game_exe,
@@ -121,7 +168,7 @@ impl eframe::App for LauncherApp {
                     }
                     ui.add_space(8.0);
                     ui.label(
-                        egui::RichText::new(&self.url)
+                        egui::RichText::new(&self.qr_url)
                             .monospace()
                             .size(11.0)
                             .color(egui::Color32::GRAY),
@@ -170,7 +217,7 @@ impl eframe::App for LauncherApp {
                         let btn =
                             egui::Button::new(egui::RichText::new("▶  Launch Game").size(22.0));
                         if ui.add_sized([280.0, 54.0], btn).clicked() {
-                            launch_game(path.clone());
+                            launch_game(self.api_base.clone(), path.clone());
                         }
                     });
 
@@ -192,29 +239,27 @@ impl eframe::App for LauncherApp {
 
 // ── Actions ───────────────────────────────────────────────────────────────────
 
-/// Spawn the game process and notify all connected controllers.
+/// Spawn the game process and broadcast `StartGame` to all connected controllers.
 ///
-/// Both operations are best-effort — errors are logged but do not abort the
-/// other step.
-fn launch_game(path: PathBuf) {
-    // Spawn the game executable.
+/// Both steps are best-effort — a failure in one does not prevent the other.
+fn launch_game(api_base: String, path: PathBuf) {
     if let Err(e) = std::process::Command::new(&path).spawn() {
         tracing::error!("failed to launch {path:?}: {e}");
     }
 
-    // Notify controllers in a background thread so the UI never blocks.
-    std::thread::spawn(|| {
-        let url = format!("http://{SERVER_ADDR}/api/game/start");
+    // POST happens in a background thread so the UI never blocks.
+    std::thread::spawn(move || {
+        let url = format!("{api_base}/api/game/start");
         if let Err(e) = ureq::post(&url).call() {
             warn!("POST {url} failed: {e}");
         }
     });
 }
 
-// ── Roster polling ────────────────────────────────────────────────────────────
+// ── Polling ───────────────────────────────────────────────────────────────────
 
-fn poll_roster() -> Option<Vec<proto::ClientInfo>> {
-    ureq::get(&format!("http://{SERVER_ADDR}/api/roster"))
+fn poll_roster(api_base: &str) -> Option<Vec<proto::ClientInfo>> {
+    ureq::get(&format!("{api_base}/api/roster"))
         .call()
         .ok()?
         .into_json::<proto::Roster>()
@@ -227,8 +272,23 @@ fn poll_roster() -> Option<Vec<proto::ClientInfo>> {
 fn main() -> eframe::Result<()> {
     tracing_subscriber::fmt::init();
 
-    // Optional positional argument: path to the game executable.
-    let game_exe = std::env::args().nth(1).map(PathBuf::from);
+    let args = Args::parse();
+
+    // Resolve the host IP to advertise in the QR code.
+    // Order of preference: --host override → auto-detected LAN IP → loopback.
+    let lan_host = args.host.unwrap_or_else(|| {
+        detect_lan_ip().map(|ip| ip.to_string()).unwrap_or_else(|| {
+            warn!(
+                "LAN IP detection failed — QR code will use 127.0.0.1 (phones cannot reach this)"
+            );
+            "127.0.0.1".to_string()
+        })
+    });
+
+    // Internal API calls always use loopback (launcher and server co-locate).
+    let api_base = format!("http://127.0.0.1:{}", args.port);
+    // QR code URL uses the LAN IP so phones on the same network can connect.
+    let qr_url = format!("http://{}:{}/?s={}", lan_host, args.port, Uuid::new_v4());
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_fullscreen(true),
@@ -238,6 +298,6 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "qpad",
         options,
-        Box::new(move |cc| Ok(Box::new(LauncherApp::new(cc, game_exe)))),
+        Box::new(move |cc| Ok(Box::new(LauncherApp::new(cc, api_base, qr_url, args.game)))),
     )
 }

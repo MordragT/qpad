@@ -1,6 +1,7 @@
 {
   imports = [
-    ./package.nix
     ./devshell.nix
+    ./module.nix
+    ./package.nix
   ];
 }
