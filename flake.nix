@@ -9,11 +9,6 @@
       inputs.nixpkgs-lib.follows = "nixpkgs";
     };
 
-    fenix = {
-      url = "github:nix-community/fenix/monthly";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
     systems.url = "github:nix-systems/default";
   };
 

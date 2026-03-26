@@ -1,18 +1,12 @@
 {
   perSystem =
     {
-      inputs',
       pkgs,
       lib,
       ...
     }:
-    let
-      rustPlatform = pkgs.makeRustPlatform {
-        inherit (inputs'.fenix.packages.complete) cargo rustc;
-      };
-    in
     {
-      packages.default = rustPlatform.buildRustPackage {
+      packages.default = pkgs.rustPlatform.buildRustPackage {
         pname = "qpad";
         version = "0.1.0";
         src = ../.;
