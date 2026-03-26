@@ -37,10 +37,10 @@
           libxkbcommon
           libGL
           # X11 fallback (winit uses X11 when Wayland is unavailable)
-          xorg.libX11
-          xorg.libXi
-          xorg.libXrandr
-          xorg.libXcursor
+          libx11
+          libxi
+          libxrandr
+          libxcursor
         ];
 
         meta = {
