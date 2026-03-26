@@ -46,8 +46,9 @@ struct Args {
     #[arg(long, value_name = "IP")]
     host: Option<String>,
 
-    /// Path to game executable (enables the Launch Game button).
-    game: Option<PathBuf>,
+    /// Optional path to the game executable. If provided, a *Launch Game* button
+    #[arg(value_name = "GAME", last = true)]
+    game: Vec<String>,
 }
 
 // ── LAN IP detection ──────────────────────────────────────────────────────────
@@ -78,8 +79,8 @@ struct LauncherApp {
     connected: Vec<proto::ClientInfo>,
     /// Receive-end of the background roster-polling channel.
     roster_rx: mpsc::Receiver<Vec<proto::ClientInfo>>,
-    /// Optional path to the game executable.
-    game_exe: Option<PathBuf>,
+    /// Optional path to the game executable. If empty, the *Launch Game* button is hidden.
+    game: Vec<String>,
 }
 
 impl LauncherApp {
@@ -87,7 +88,7 @@ impl LauncherApp {
         cc: &eframe::CreationContext,
         api_base: String,
         qr_url: String,
-        game_exe: Option<PathBuf>,
+        game: Vec<String>,
     ) -> Self {
         cc.egui_ctx.set_zoom_factor(1.5);
         cc.egui_ctx.set_visuals(egui::Visuals::dark());
@@ -121,7 +122,7 @@ impl LauncherApp {
             api_base,
             connected: Vec::new(),
             roster_rx,
-            game_exe,
+            game,
         }
     }
 }
@@ -129,13 +130,17 @@ impl LauncherApp {
 // ── eframe::App ───────────────────────────────────────────────────────────────
 
 impl eframe::App for LauncherApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        ctx.request_repaint_after(Duration::from_millis(500));
+    }
+
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         // Drain the roster channel — keep the latest snapshot.
         while let Ok(clients) = self.roster_rx.try_recv() {
             self.connected = clients;
         }
 
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show_inside(ui, |ui| {
             ui.add_space(24.0);
 
             // ── Header ───────────────────────────────────────────────────────
@@ -206,34 +211,19 @@ impl eframe::App for LauncherApp {
 
             // ── Launch Game button (only if a game exe was provided) ──────────
 
-            if let Some(ref path) = self.game_exe.clone() {
+            if !self.game.is_empty() {
                 ui.add_space(24.0);
                 ui.separator();
                 ui.add_space(16.0);
 
-                let enabled = !self.connected.is_empty();
                 ui.vertical_centered(|ui| {
-                    ui.add_enabled_ui(enabled, |ui| {
-                        let btn =
-                            egui::Button::new(egui::RichText::new("▶  Launch Game").size(22.0));
-                        if ui.add_sized([280.0, 54.0], btn).clicked() {
-                            launch_game(self.api_base.clone(), path.clone());
-                        }
-                    });
-
-                    if !enabled {
-                        ui.add_space(6.0);
-                        ui.label(
-                            egui::RichText::new("Waiting for at least one player…")
-                                .size(13.0)
-                                .color(egui::Color32::GRAY),
-                        );
+                    let btn = egui::Button::new(egui::RichText::new("▶  Launch Game").size(22.0));
+                    if ui.add_sized([280.0, 54.0], btn).clicked() {
+                        launch_game(self.api_base.clone(), &self.game);
                     }
                 });
             }
         });
-
-        ctx.request_repaint_after(Duration::from_millis(500));
     }
 }
 
@@ -242,15 +232,16 @@ impl eframe::App for LauncherApp {
 /// Spawn the game process and broadcast `StartGame` to all connected controllers.
 ///
 /// Both steps are best-effort — a failure in one does not prevent the other.
-fn launch_game(api_base: String, path: PathBuf) {
-    if let Err(e) = std::process::Command::new(&path).spawn() {
+fn launch_game(api_base: String, game: &[String]) {
+    let path = &game[0];
+    if let Err(e) = std::process::Command::new(path).args(&game[1..]).spawn() {
         tracing::error!("failed to launch {path:?}: {e}");
     }
 
     // POST happens in a background thread so the UI never blocks.
     std::thread::spawn(move || {
         let url = format!("{api_base}/api/game/start");
-        if let Err(e) = ureq::post(&url).call() {
+        if let Err(e) = ureq::post(&url).send_empty() {
             warn!("POST {url} failed: {e}");
         }
     });
@@ -262,7 +253,8 @@ fn poll_roster(api_base: &str) -> Option<Vec<proto::ClientInfo>> {
     ureq::get(&format!("{api_base}/api/roster"))
         .call()
         .ok()?
-        .into_json::<proto::Roster>()
+        .into_body()
+        .read_json::<proto::Roster>()
         .ok()
         .map(|r| r.clients)
 }
@@ -272,11 +264,11 @@ fn poll_roster(api_base: &str) -> Option<Vec<proto::ClientInfo>> {
 fn main() -> eframe::Result<()> {
     tracing_subscriber::fmt::init();
 
-    let args = Args::parse();
+    let Args { port, host, game } = Args::parse();
 
     // Resolve the host IP to advertise in the QR code.
     // Order of preference: --host override → auto-detected LAN IP → loopback.
-    let lan_host = args.host.unwrap_or_else(|| {
+    let lan_host = host.unwrap_or_else(|| {
         detect_lan_ip().map(|ip| ip.to_string()).unwrap_or_else(|| {
             warn!(
                 "LAN IP detection failed — QR code will use 127.0.0.1 (phones cannot reach this)"
@@ -286,9 +278,9 @@ fn main() -> eframe::Result<()> {
     });
 
     // Internal API calls always use loopback (launcher and server co-locate).
-    let api_base = format!("http://127.0.0.1:{}", args.port);
+    let api_base = format!("http://127.0.0.1:{}", port);
     // QR code URL uses the LAN IP so phones on the same network can connect.
-    let qr_url = format!("http://{}:{}/?s={}", lan_host, args.port, Uuid::new_v4());
+    let qr_url = format!("http://{}:{}/?s={}", lan_host, port, Uuid::new_v4());
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_fullscreen(true),
@@ -298,6 +290,6 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "qpad",
         options,
-        Box::new(move |cc| Ok(Box::new(LauncherApp::new(cc, api_base, qr_url, args.game)))),
+        Box::new(move |cc| Ok(Box::new(LauncherApp::new(cc, api_base, qr_url, game)))),
     )
 }

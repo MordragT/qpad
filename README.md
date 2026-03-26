@@ -46,7 +46,7 @@ qpad-web --port 3000
 Then start the launcher from a graphical session:
 
 ```bash
-qpad-launcher [--port 3000] [--host <LAN_IP>] [/path/to/game]
+qpad-launcher [--port 3000] [--host <LAN_IP>] -- /path/to/game [game args...]
 ```
 
 The launcher auto-detects the machine's LAN IP for the QR code. If it picks the wrong interface, pass `--host` to override. The game argument is optional — when provided, a launch button appears that becomes active once at least one player is connected.
@@ -85,7 +85,7 @@ The flake provides a NixOS module. It enables `hardware.uinput`, creates a `qpad
 `qpad-launcher` is added to `environment.systemPackages` with the port pre-configured, so any user on the machine can just run:
 
 ```bash
-qpad-launcher /path/to/game
+qpad-launcher -- /path/to/game [game args...]
 ```
 
 ## License
