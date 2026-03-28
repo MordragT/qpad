@@ -81,6 +81,18 @@ pub struct ClientInfo {
     pub connected_at: u64,
 }
 
+impl From<Register> for ClientInfo {
+    fn from(reg: Register) -> Self {
+        let Register { client_id, name } = reg;
+
+        Self {
+            client_id,
+            name,
+            connected_at: unix_millis(),
+        }
+    }
+}
+
 /// Snapshot of all currently-connected clients, broadcast on every change.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Roster {
@@ -118,10 +130,14 @@ pub enum ClientMsg {
 pub enum ServerMsg {
     /// Updated snapshot of all connected clients.
     Roster(Roster),
-    /// Sent by the server when the game session begins.
-    ///
-    /// Triggered by `POST /api/game/start` from the launcher.
-    StartGame,
+}
+
+// Small helper to get the current Unix timestamp in milliseconds.
+fn unix_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
 }
 
 // ── Codec ─────────────────────────────────────────────────────────────────────

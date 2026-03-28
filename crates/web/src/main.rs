@@ -11,9 +11,9 @@ mod ws;
 use axum::{Router, response::Html, routing};
 use clap::Parser;
 use state::AppState;
-use std::{net::SocketAddr, sync::Arc};
-use tokio::sync::broadcast;
+use std::net::SocketAddr;
 use tracing::info;
+use tracing_subscriber::EnvFilter;
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 
@@ -38,32 +38,20 @@ struct Args {
 
 const INDEX_HTML: &str = include_str!("../static/index.html");
 
-// ── Entry point ───────────────────────────────────────────────────────────────
-
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+
+    tracing_subscriber::fmt().with_env_filter(filter).init();
 
     let args = Args::parse();
     let addr = SocketAddr::from(([0, 0, 0, 0], args.port));
-
-    // Small broadcast buffer — roster updates are infrequent.
-    let (broadcaster, _) = broadcast::channel::<Vec<u8>>(16);
-
-    // Spawn the evdev input bridge; the sender end lives in AppState.
-    let input_tx = input::start();
-
-    let state = AppState {
-        clients: Arc::new(dashmap::DashMap::new()),
-        broadcaster,
-        input_tx,
-    };
+    let state = AppState::default();
 
     let app = Router::new()
         .route("/", routing::get(index))
         .route("/ws", routing::get(ws::ws_handler))
         .route("/api/roster", routing::get(api::roster))
-        .route("/api/game/start", routing::post(api::game_start))
         .with_state(state);
 
     info!(%addr, "qpad-web starting");
@@ -74,8 +62,6 @@ async fn main() {
 
     axum::serve(listener, app).await.expect("server error");
 }
-
-// ── Index handler ─────────────────────────────────────────────────────────────
 
 async fn index() -> Html<&'static str> {
     Html(INDEX_HTML)

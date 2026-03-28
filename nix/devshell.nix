@@ -1,33 +1,25 @@
 {
   perSystem =
     {
-      inputs',
       pkgs,
       lib,
       ...
     }:
-    let
-      toolchain = inputs'.fenix.packages.complete;
-    in
     {
       devShells.default =
         let
-          packages =
-            (with toolchain; [
-              cargo
-              rustc
-              rust-src
-              clippy
-              rustfmt
-            ])
-            ++ (with pkgs; [
-              pkg-config
-              nixfmt
-              wayland
-              wayland-protocols
-              libxkbcommon
-              libGL
-            ]);
+          packages = with pkgs; [
+            cargo
+            rustc
+            rustfmt
+            clippy
+            pkg-config
+            nixfmt
+            wayland
+            wayland-protocols
+            libxkbcommon
+            libGL
+          ];
 
         in
         pkgs.mkShell {
@@ -36,7 +28,7 @@
           # Specify the rust-src path (many editors rely on this)
           env = {
             LD_LIBRARY_PATH = lib.makeLibraryPath packages;
-            RUST_SRC_PATH = "${toolchain.rust-src}/lib/rustlib/src/rust/library";
+            RUST_SRC_PATH = "${pkgs.rustPlatform.rustLibSrc}";
           };
         };
     };

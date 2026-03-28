@@ -20,7 +20,7 @@
 //!   -V, --version      Print version
 //! ```
 
-use std::{net::IpAddr, path::PathBuf, sync::mpsc, time::Duration};
+use std::{net::IpAddr, sync::mpsc, time::Duration};
 
 use clap::Parser;
 use eframe::egui;
@@ -72,9 +72,6 @@ struct LauncherApp {
     qr_url: String,
     /// Pre-rendered Unicode QR code; `None` if generation failed.
     qr: Option<String>,
-    /// Base URL for internal API calls — always loopback so it works
-    /// regardless of which interface the server is bound to.
-    api_base: String,
     /// Latest roster snapshot from the background poll thread.
     connected: Vec<proto::ClientInfo>,
     /// Receive-end of the background roster-polling channel.
@@ -100,17 +97,16 @@ impl LauncherApp {
         // Background thread: polls /api/roster every 2 s and wakes the UI.
         let (roster_tx, roster_rx) = mpsc::channel::<Vec<proto::ClientInfo>>();
         let repaint = cc.egui_ctx.clone();
-        let poll_base = api_base.clone();
 
         std::thread::spawn(move || {
             loop {
-                if let Some(clients) = poll_roster(&poll_base) {
+                if let Some(clients) = poll_roster(&api_base) {
                     if roster_tx.send(clients).is_err() {
                         break; // receiver dropped — main window closed
                     }
                     repaint.request_repaint();
                 } else {
-                    warn!("roster poll failed — is qpad-web running at {poll_base}?");
+                    warn!("roster poll failed — is qpad-web running at {api_base}?");
                 }
                 std::thread::sleep(Duration::from_secs(2));
             }
@@ -119,7 +115,6 @@ impl LauncherApp {
         Self {
             qr_url,
             qr,
-            api_base,
             connected: Vec::new(),
             roster_rx,
             game,
@@ -219,7 +214,7 @@ impl eframe::App for LauncherApp {
                 ui.vertical_centered(|ui| {
                     let btn = egui::Button::new(egui::RichText::new("▶  Launch Game").size(22.0));
                     if ui.add_sized([280.0, 54.0], btn).clicked() {
-                        launch_game(self.api_base.clone(), &self.game);
+                        launch_game(&self.game);
                     }
                 });
             }
@@ -227,27 +222,15 @@ impl eframe::App for LauncherApp {
     }
 }
 
-// ── Actions ───────────────────────────────────────────────────────────────────
-
 /// Spawn the game process and broadcast `StartGame` to all connected controllers.
 ///
 /// Both steps are best-effort — a failure in one does not prevent the other.
-fn launch_game(api_base: String, game: &[String]) {
+fn launch_game(game: &[String]) {
     let path = &game[0];
     if let Err(e) = std::process::Command::new(path).args(&game[1..]).spawn() {
         tracing::error!("failed to launch {path:?}: {e}");
     }
-
-    // POST happens in a background thread so the UI never blocks.
-    std::thread::spawn(move || {
-        let url = format!("{api_base}/api/game/start");
-        if let Err(e) = ureq::post(&url).send_empty() {
-            warn!("POST {url} failed: {e}");
-        }
-    });
 }
-
-// ── Polling ───────────────────────────────────────────────────────────────────
 
 fn poll_roster(api_base: &str) -> Option<Vec<proto::ClientInfo>> {
     ureq::get(&format!("{api_base}/api/roster"))
@@ -258,8 +241,6 @@ fn poll_roster(api_base: &str) -> Option<Vec<proto::ClientInfo>> {
         .ok()
         .map(|r| r.clients)
 }
-
-// ── Entry point ───────────────────────────────────────────────────────────────
 
 fn main() -> eframe::Result<()> {
     tracing_subscriber::fmt::init();
