@@ -15,7 +15,8 @@ tracing-subscriber = { workspace = true }
 # ── Launcher specific ─────────────────────────────────────────────────────────
 eframe = "0.34"
 egui   = "0.34"
-qrcode = "0.14"
+image = "0.25"
+qrcode = { version = "0.14", features = ["image"] }
 ureq   = { version = "3", features = ["json"] }
 clap   = { workspace = true }
 

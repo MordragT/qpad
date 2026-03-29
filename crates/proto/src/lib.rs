@@ -69,25 +69,22 @@ impl From<serde_json::Error> for ProtoError {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Register {
     pub client_id: Uuid,
-    pub name: String,
 }
 
 /// Server-side record of one connected client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClientInfo {
     pub client_id: Uuid,
-    pub name: String,
     /// Unix timestamp in milliseconds when the client connected.
     pub connected_at: u64,
 }
 
 impl From<Register> for ClientInfo {
     fn from(reg: Register) -> Self {
-        let Register { client_id, name } = reg;
+        let Register { client_id } = reg;
 
         Self {
             client_id,
-            name,
             connected_at: unix_millis(),
         }
     }

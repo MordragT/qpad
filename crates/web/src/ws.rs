@@ -65,10 +65,10 @@ async fn dispatch(bytes: &[u8], state: &AppState, session: &mut Option<SessionSt
 
     match msg {
         ClientMsg::Register(reg) => {
-            info!(name = %reg.name, id = %reg.client_id, "client registered");
+            info!(id = %reg.client_id, "client registered");
 
             let info = ClientInfo::from(reg);
-            let controller = match Controller::open(&info.name) {
+            let controller = match Controller::open(&info.client_id.to_string()) {
                 Ok(c) => c,
                 Err(e) => {
                     debug!(

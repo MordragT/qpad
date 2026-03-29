@@ -20,11 +20,12 @@
 //!   -V, --version      Print version
 //! ```
 
-use std::{net::IpAddr, sync::mpsc, time::Duration};
+use std::{net::IpAddr, os::unix::process::CommandExt, sync::mpsc, time::Duration};
 
 use clap::Parser;
 use eframe::egui;
-use qrcode::{QrCode, render::unicode};
+use egui::{ColorImage, Image, TextureHandle, TextureOptions};
+use qrcode::QrCode;
 use tracing::warn;
 use uuid::Uuid;
 
@@ -70,8 +71,8 @@ fn detect_lan_ip() -> Option<IpAddr> {
 struct LauncherApp {
     /// Full URL encoded in the QR code (uses the LAN IP so phones can reach it).
     qr_url: String,
-    /// Pre-rendered Unicode QR code; `None` if generation failed.
-    qr: Option<String>,
+    /// Pre-rendered QR code; `None` if generation failed.
+    qr: Option<TextureHandle>,
     /// Latest roster snapshot from the background poll thread.
     connected: Vec<proto::ClientInfo>,
     /// Receive-end of the background roster-polling channel.
@@ -92,7 +93,13 @@ impl LauncherApp {
 
         let qr = QrCode::new(qr_url.as_bytes())
             .ok()
-            .map(|c| c.render::<unicode::Dense1x2>().build());
+            .map(|c| c.render::<image::Rgba<u8>>().build())
+            .map(|img| {
+                let size = [img.width() as usize; 2];
+                let color = ColorImage::from_rgba_unmultiplied(size, &img);
+                cc.egui_ctx
+                    .load_texture("qr", color, TextureOptions::LINEAR)
+            });
 
         // Background thread: polls /api/roster every 2 s and wakes the UI.
         let (roster_tx, roster_rx) = mpsc::channel::<Vec<proto::ClientInfo>>();
@@ -160,7 +167,7 @@ impl eframe::App for LauncherApp {
                 cols[0].vertical_centered(|ui| {
                     match &self.qr {
                         Some(qr) => {
-                            ui.code(qr.as_str());
+                            ui.add(Image::from_texture(qr));
                         }
                         None => {
                             ui.colored_label(egui::Color32::RED, "QR generation failed");
@@ -196,7 +203,11 @@ impl eframe::App for LauncherApp {
                         for client in &self.connected {
                             ui.group(|ui| {
                                 ui.set_min_width(ui.available_width());
-                                ui.label(egui::RichText::new(&client.name).size(18.0).strong());
+                                ui.label(
+                                    egui::RichText::new(&client.client_id.to_string())
+                                        .size(18.0)
+                                        .strong(),
+                                );
                             });
                             ui.add_space(4.0);
                         }
@@ -227,7 +238,11 @@ impl eframe::App for LauncherApp {
 /// Both steps are best-effort — a failure in one does not prevent the other.
 fn launch_game(game: &[String]) {
     let path = &game[0];
-    if let Err(e) = std::process::Command::new(path).args(&game[1..]).spawn() {
+    if let Some(e) = std::process::Command::new(path)
+        .args(&game[1..])
+        .exec()
+        .raw_os_error()
+    {
         tracing::error!("failed to launch {path:?}: {e}");
     }
 }

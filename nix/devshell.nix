@@ -9,6 +9,7 @@
       devShells.default =
         let
           packages = with pkgs; [
+            evtest
             cargo
             rustc
             rustfmt

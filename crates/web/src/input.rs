@@ -27,6 +27,7 @@
 //! and may return errors which the controller logs.
 
 use evdevil::{
+    Bus, InputId,
     event::{InputEvent, Key, KeyEvent, KeyState},
     uinput::UinputDevice,
 };
@@ -49,6 +50,11 @@ const BUTTON_MAP: [(u32, Key); 10] = [
     (1 << 9, Key::BTN_DPAD_RIGHT),
 ];
 
+/// InputId for the virtual gamepad device. The bus is faked as USB, and the
+/// vendor/product IDs are arbitrary but should be unique enough to avoid conflicts
+/// with real devices.
+const INPUT_ID: InputId = InputId::new(Bus::USB, 0x1209, 0x2881, 0x0100);
+
 #[derive(Debug)]
 pub struct Controller {
     device: UinputDevice,
@@ -59,7 +65,10 @@ impl Controller {
     /// Open and configure the virtual gamepad device.
     pub fn open(name: &str) -> std::io::Result<Self> {
         let keys = BUTTON_MAP.iter().map(|&(_, key)| key);
-        let device = UinputDevice::builder()?.with_keys(keys)?.build(name)?;
+        let device = UinputDevice::builder()?
+            .with_input_id(INPUT_ID)?
+            .with_keys(keys)?
+            .build(&format!("Qpad Controller ({name})"))?;
         device.set_nonblocking(true)?;
 
         Ok(Self { device, state: 0 })
