@@ -1,12 +1,11 @@
 //! Shared application state threaded through every Axum handler.
 
 use dashmap::DashMap;
-use proto::ClientInfo;
+use proto::{ClientId, ClientInfo};
 use std::sync::Arc;
-use uuid::Uuid;
 
 /// Convenience alias: the concurrent map that tracks connected clients.
-pub type Clients = Arc<DashMap<Uuid, ClientInfo>>;
+pub type Clients = Arc<DashMap<ClientId, ClientInfo>>;
 
 /// Cheap-to-clone state shared across every connection handler.
 ///

@@ -1,8 +1,8 @@
 //! Virtual gamepad input bridge.
 //!
-//! This module provides a Controller that owns a [`UinputDevice`] and
+//! This module provides a Qpad that owns a [`UinputDevice`] and
 //! translates [`InputFrame`] messages into kernel input events via evdevil.
-//! The caller is expected to open a `Controller` and call [`Controller::handle_frame`]
+//! The caller is expected to open a `Qpad` and call [`Qpad::handle_frame`]
 //! whenever a new frame arrives.
 //!
 //! # Button layout
@@ -27,91 +27,91 @@
 //! and may return errors which the controller logs.
 
 use evdevil::{
-    Bus, InputId,
-    event::{InputEvent, Key, KeyEvent, KeyState},
-    uinput::UinputDevice,
+    AbsInfo,
+    event::{Abs, AbsEvent, Key, KeyEvent, KeyState},
+    uinput::{AbsSetup, UinputDevice},
 };
-use proto::InputFrame;
+use proto::{ButtonSet, ClientInfo, InputFrame};
+use smallvec::SmallVec;
 use tracing::error;
 
-/// Maps each button-bitmask bit to the corresponding evdev [`Key`] code.
-///
-/// The order must match the bitmask layout documented in [`proto::InputFrame`].
-const BUTTON_MAP: [(u32, Key); 10] = [
-    (1 << 0, Key::BTN_SOUTH), // A
-    (1 << 1, Key::BTN_EAST),  // B
-    (1 << 2, Key::BTN_NORTH), // Y
-    (1 << 3, Key::BTN_WEST),  // X
-    (1 << 4, Key::BTN_START),
-    (1 << 5, Key::BTN_SELECT),
-    (1 << 6, Key::BTN_DPAD_UP),
-    (1 << 7, Key::BTN_DPAD_DOWN),
-    (1 << 8, Key::BTN_DPAD_LEFT),
-    (1 << 9, Key::BTN_DPAD_RIGHT),
-];
-
-/// InputId for the virtual gamepad device. The bus is faked as USB, and the
-/// vendor/product IDs are arbitrary but should be unique enough to avoid conflicts
-/// with real devices.
-const INPUT_ID: InputId = InputId::new(Bus::USB, 0x1209, 0x2881, 0x0100);
-
 #[derive(Debug)]
-pub struct Controller {
+pub struct Qpad {
     device: UinputDevice,
-    state: u32,
+    buttons: ButtonSet,
 }
 
-impl Controller {
+impl Qpad {
     /// Open and configure the virtual gamepad device.
-    pub fn open(name: &str) -> std::io::Result<Self> {
-        let keys = BUTTON_MAP.iter().map(|&(_, key)| key);
-        let device = UinputDevice::builder()?
-            .with_input_id(INPUT_ID)?
-            .with_keys(keys)?
-            .build(&format!("Qpad Controller ({name})"))?;
+    pub fn open(info: ClientInfo) -> std::io::Result<Self> {
+        let ClientInfo {
+            id,
+            layout,
+            connected_at: _,
+        } = info;
+
+        let mut device = UinputDevice::builder()?
+            .with_input_id(layout.input_id())?
+            .with_keys(layout.buttons().into_iter().map(Key::from))?;
+
+        if layout.axes() {
+            device = device.with_abs_axes([
+                AbsSetup::new(Abs::X, AbsInfo::new(-32767, 32767).with_flat(128)),
+                AbsSetup::new(Abs::Y, AbsInfo::new(-32767, 32767).with_flat(128)),
+            ])?;
+        }
+
+        let device = device.build(&format!("Qpad {layout} ({id})"))?;
         device.set_nonblocking(true)?;
 
-        Ok(Self { device, state: 0 })
+        Ok(Self {
+            device,
+            buttons: ButtonSet::empty(),
+        })
     }
 
     /// Handle a new input frame by computing the button state transitions and
     /// writing the corresponding events to the kernel.
     pub fn handle_frame(&mut self, frame: InputFrame) {
-        let new = frame.buttons;
+        let InputFrame {
+            buttons: new_buttons,
+            x_axis,
+            y_axis,
+            ..
+        } = frame;
 
-        if self.state == new {
-            return; // nothing changed, skip the write
+        if self.buttons == new_buttons
+            && x_axis <= 128
+            && x_axis >= -128
+            && y_axis <= 128
+            && y_axis >= -128
+        {
+            // no change since last frame, skip writing events
+            return;
         }
 
-        let events = key_events(self.state, new);
+        // TODO: make this less magic with type safety
+        // classic max events = 8
+        // analog max events = 6 buttons + 2 axes = 8
+        let mut events = SmallVec::<[_; 8]>::new();
 
-        if !events.is_empty() {
-            // UinputDevice::write is a synchronous syscall to /dev/uinput.
-            // It should return almost immediately (kernel buffer)
-            if let Err(e) = self.device.write(&events) {
-                error!("evdev write failed: {e}");
-            }
+        // pressed in new
+        for button in new_buttons.difference(self.buttons) {
+            events.push(KeyEvent::new(button.into(), KeyState::PRESSED).into());
         }
 
-        self.state = new;
+        // released in new
+        for button in self.buttons.difference(new_buttons) {
+            events.push(KeyEvent::new(button.into(), KeyState::RELEASED).into());
+        }
+
+        events.push(AbsEvent::new(Abs::X, x_axis as i32).into());
+        events.push(AbsEvent::new(Abs::Y, y_axis as i32).into());
+
+        if let Err(e) = self.device.write(&events) {
+            error!("evdev write failed: {e}");
+        }
+
+        self.buttons = new_buttons;
     }
-}
-
-/// Compute the set of [`InputEvent`]s needed to transition from button state
-/// `old` to `new`, emitting a `PRESSED` event for each newly-set bit and a
-/// `RELEASED` event for each newly-cleared bit.
-fn key_events(old: u32, new: u32) -> Vec<InputEvent> {
-    let mut events = Vec::new();
-
-    for &(bit, key) in &BUTTON_MAP {
-        let was_pressed = old & bit != 0;
-        let is_pressed = new & bit != 0;
-
-        match (was_pressed, is_pressed) {
-            (false, true) => events.push(KeyEvent::new(key, KeyState::PRESSED).into()),
-            (true, false) => events.push(KeyEvent::new(key, KeyState::RELEASED).into()),
-            _ => {}
-        }
-    }
-    events
 }

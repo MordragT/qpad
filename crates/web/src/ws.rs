@@ -22,7 +22,7 @@ use axum::{
 use proto::{ClientInfo, ClientMsg};
 use tracing::{debug, info};
 
-use crate::{input::Controller, state::AppState};
+use crate::{input::Qpad, state::AppState};
 
 pub async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_socket(socket, state))
@@ -31,7 +31,7 @@ pub async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> 
 #[derive(Debug)]
 pub struct SessionState {
     info: ClientInfo,
-    controller: Controller,
+    qpad: Qpad,
 }
 
 async fn handle_socket(mut socket: WebSocket, state: AppState) {
@@ -48,7 +48,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
     }
 
     if let Some(session) = session {
-        state.clients.remove(&session.info.client_id);
+        state.clients.remove(&session.info.id);
     }
 
     info!("ws connection closed");
@@ -65,32 +65,29 @@ async fn dispatch(bytes: &[u8], state: &AppState, session: &mut Option<SessionSt
 
     match msg {
         ClientMsg::Register(reg) => {
-            info!(id = %reg.client_id, "client registered");
+            info!(id = %reg.id, "client registered");
 
             let info = ClientInfo::from(reg);
-            let controller = match Controller::open(&info.client_id.to_string()) {
+            let qpad = match Qpad::open(info) {
                 Ok(c) => c,
                 Err(e) => {
-                    debug!(
-                        "failed to open controller for client {}: {e}",
-                        info.client_id
-                    );
+                    debug!("failed to open controller for client {}: {e}", info.id);
                     return;
                 }
             };
 
-            state.clients.insert(info.client_id, info.clone());
-            *session = Some(SessionState { info, controller });
+            state.clients.insert(info.id, info);
+            *session = Some(SessionState { info, qpad });
         }
-        ClientMsg::Input(frame) => {
-            debug!(id = %frame.client_id, seq = frame.seq, "input frame");
+        ClientMsg::Input(buttons) => {
+            debug!(id = %buttons.id, seq = buttons.seq, "input frame");
 
             let Some(session) = session else {
                 debug!("received input frame before registration, ignoring");
                 return;
             };
 
-            session.controller.handle_frame(frame);
+            session.qpad.handle_frame(buttons);
         }
     }
 }

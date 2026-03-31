@@ -9,6 +9,8 @@
       devShells.default =
         let
           packages = with pkgs; [
+            just
+            tailwindcss_4
             evtest
             cargo
             rustc

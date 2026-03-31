@@ -34,9 +34,16 @@
 //! | 8   | `BTN_DPAD_LEFT`  | D←     |
 //! | 9   | `BTN_DPAD_RIGHT` | D→     |
 
+use std::{fmt, str::FromStr};
+
+use clap::ValueEnum;
+use evdevil::{Bus, InputId};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use thiserror::Error;
-use uuid::Uuid;
+
+mod button;
+
+pub use button::{Button, ButtonSet};
 
 // ── Error ─────────────────────────────────────────────────────────────────────
 
@@ -65,26 +72,112 @@ impl From<serde_json::Error> for ProtoError {
 
 // ── Leaf types ────────────────────────────────────────────────────────────────
 
+// RGB Client Id
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct ClientId([u8; 3]);
+
+impl fmt::Display for ClientId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = self
+            .0
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>();
+        write!(f, "{s}")
+    }
+}
+
+#[derive(
+    Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, ValueEnum,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum QpadLayout {
+    #[default]
+    Classic,
+    Analog,
+}
+
+impl FromStr for QpadLayout {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "classic" => Ok(Self::Classic),
+            "analog" => Ok(Self::Analog),
+            _ => Err(format!("invalid client kind: {s}")),
+        }
+    }
+}
+
+impl fmt::Display for QpadLayout {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            Self::Classic => "classic",
+            Self::Analog => "analog",
+        };
+        write!(f, "{s}")
+    }
+}
+
+impl QpadLayout {
+    pub const fn input_id(self) -> InputId {
+        match self {
+            Self::Classic => InputId::new(Bus::USB, 0x1209, 0x2881, 0x0100),
+            Self::Analog => InputId::new(Bus::USB, 0x1209, 0x2882, 0x0100),
+        }
+    }
+
+    pub fn buttons(self) -> ButtonSet {
+        match self {
+            Self::Classic => {
+                Button::A
+                    | Button::B
+                    | Button::Y
+                    | Button::X
+                    | Button::Start
+                    | Button::Select
+                    | Button::Up
+                    | Button::Down
+                    | Button::Left
+                    | Button::Right
+            }
+            Self::Analog => {
+                Button::A | Button::B | Button::Y | Button::X | Button::Start | Button::Select
+            }
+        }
+    }
+
+    pub fn axes(self) -> bool {
+        match self {
+            Self::Classic => true,
+            Self::Analog => false,
+        }
+    }
+}
+
 /// First message a controller client sends to identify itself.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct Register {
-    pub client_id: Uuid,
+    pub id: ClientId,
+    pub layout: QpadLayout,
 }
 
 /// Server-side record of one connected client.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct ClientInfo {
-    pub client_id: Uuid,
+    pub id: ClientId,
+    pub layout: QpadLayout,
     /// Unix timestamp in milliseconds when the client connected.
     pub connected_at: u64,
 }
 
 impl From<Register> for ClientInfo {
     fn from(reg: Register) -> Self {
-        let Register { client_id } = reg;
+        let Register { id, layout } = reg;
 
         Self {
-            client_id,
+            id,
+            layout,
             connected_at: unix_millis(),
         }
     }
@@ -96,18 +189,18 @@ pub struct Roster {
     pub clients: Vec<ClientInfo>,
 }
 
-/// A single input frame from a controller client (see bitmask table in module docs).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// A single button input frame from a controller (see bitmask table in module docs).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct InputFrame {
-    pub client_id: Uuid,
+    pub id: ClientId,
     /// Monotonically-increasing per-client sequence number (starts at 1).
     pub seq: u64,
     /// Bitmask of currently-pressed buttons.
-    pub buttons: u32,
-    /// Analogue axes, conventionally in `[-32768, 32767]`.
-    pub axes: Vec<i16>,
-    /// Unix timestamp in milliseconds when the frame was captured.
-    pub ts_millis: u64,
+    pub buttons: ButtonSet,
+    /// X axis for analog stick
+    pub x_axis: i16,
+    /// Y axis for analog stick
+    pub y_axis: i16,
 }
 
 // ── Envelope types ────────────────────────────────────────────────────────────
@@ -116,7 +209,7 @@ pub struct InputFrame {
 ///
 /// Encoded with serde's default *externally-tagged* format:
 /// `{"Register":{"client_id":"…","name":"…"}}`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum ClientMsg {
     Register(Register),
     Input(InputFrame),

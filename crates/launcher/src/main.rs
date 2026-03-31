@@ -25,9 +25,9 @@ use std::{net::IpAddr, os::unix::process::CommandExt, sync::mpsc, time::Duration
 use clap::Parser;
 use eframe::egui;
 use egui::{ColorImage, Image, TextureHandle, TextureOptions};
+use proto::QpadLayout;
 use qrcode::QrCode;
 use tracing::warn;
-use uuid::Uuid;
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 
@@ -42,12 +42,15 @@ struct Args {
     #[arg(short, long, default_value_t = 3000)]
     port: u16,
 
-    /// Override the advertised server IP shown in the QR code.
-    /// Defaults to the auto-detected LAN IP of this machine.
+    /// Override the advertised server IP.
     #[arg(long, value_name = "IP")]
     host: Option<String>,
 
-    /// Optional path to the game executable. If provided, a *Launch Game* button
+    /// Controller layout.
+    #[arg(long, value_name = "LAYOUT", default_value_t  = QpadLayout::Classic)]
+    layout: QpadLayout,
+
+    /// Optional path to the game executable.
     #[arg(value_name = "GAME", last = true)]
     game: Vec<String>,
 }
@@ -204,7 +207,7 @@ impl eframe::App for LauncherApp {
                             ui.group(|ui| {
                                 ui.set_min_width(ui.available_width());
                                 ui.label(
-                                    egui::RichText::new(&client.client_id.to_string())
+                                    egui::RichText::new(&client.id.to_string())
                                         .size(18.0)
                                         .strong(),
                                 );
@@ -260,7 +263,12 @@ fn poll_roster(api_base: &str) -> Option<Vec<proto::ClientInfo>> {
 fn main() -> eframe::Result<()> {
     tracing_subscriber::fmt::init();
 
-    let Args { port, host, game } = Args::parse();
+    let Args {
+        port,
+        host,
+        game,
+        layout: kind,
+    } = Args::parse();
 
     // Resolve the host IP to advertise in the QR code.
     // Order of preference: --host override → auto-detected LAN IP → loopback.
@@ -276,7 +284,7 @@ fn main() -> eframe::Result<()> {
     // Internal API calls always use loopback (launcher and server co-locate).
     let api_base = format!("http://127.0.0.1:{}", port);
     // QR code URL uses the LAN IP so phones on the same network can connect.
-    let qr_url = format!("http://{}:{}/?s={}", lan_host, port, Uuid::new_v4());
+    let qr_url = format!("http://{}:{}/{}", lan_host, port, kind);
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_fullscreen(true),

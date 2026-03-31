@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+        <title>qpad</title>
+        <link rel="manifest" href="./manifest.json" />
+        <link rel="stylesheet" href="./style.css" />
+    </head>
+
+    <body class="min-h-svh bg-[#0d1117] text-[#e6edf3] font-sans touch-manipulation select-none">
+        <div
+            id="status"
+            class="w-full h-8 bg-[#071018] border-b border-[#10161a] flex items-center px-4 text-xs text-[#9aa6b2]"
+        >
+            <div id="status-host" class="flex-1 truncate">Unknown</div>
+            <div id="status-message" class="opacity-80">Connecting...</div>
+        </div>
+
+        <main
+            class="flex portrait:flex-col landscape:flex-row landscape:items-end landscape:justify-between h-[calc(100svh-2rem)] max-w-[900px] mx-auto px-4 pb-6"
+        >
+            <!-- Pushes everything below toward the bottom in portrait -->
+            <div class="portrait:flex-1 landscape:hidden" aria-hidden="true"></div>
+
+            <!-- Center buttons: floats above clusters in portrait, sits between them in landscape -->
+            <div class="portrait:mb-6 portrait:self-center landscape:order-2 flex flex-col items-center gap-3">
+                <button
+                    id="btn-select"
+                    data-bit="32"
+                    aria-label="Select"
+                    class="px-4 py-2 rounded-md bg-[#13171c] text-[#9aa6b2] text-sm hover:bg-[#1f2933] transition-colors duration-75"
+                >
+                    ⊟ Select
+                </button>
+                <button
+                    id="btn-start"
+                    data-bit="16"
+                    aria-label="Start"
+                    class="px-4 py-2 rounded-md bg-[#13171c] text-[#9aa6b2] text-sm hover:bg-[#1f2933] transition-colors duration-75"
+                >
+                    ⊞ Start
+                </button>
+            </div>
+
+            <!--
+                portrait:  display:flex  → clusters sit side-by-side in a row
+                landscape: display:contents → wrapper vanishes, clusters become direct
+                           children of main and respond to landscape:order-X
+            -->
+            <div class="portrait:flex portrait:justify-between portrait:w-full landscape:contents">
+                <div
+                    id="joystick-zone"
+                    class="relative rounded-full bg-[#171c22] border-2 border-[#30363d] w-[min(46vmin,190px)] aspect-square landscape:order-1 touch-none"
+                >
+                    <div
+                        id="joystick-thumb"
+                        class="absolute rounded-full bg-[#21262d] border border-[#30363d] w-1/3 aspect-square"
+                        style="top: 50%; left: 50%; transform: translate(-50%, -50%)"
+                    ></div>
+                </div>
+
+                <div
+                    id="cluster-right"
+                    role="group"
+                    aria-label="Face buttons"
+                    class="landscape:order-3 grid grid-cols-3 grid-rows-3 gap-1 w-[min(46vmin,190px)] aspect-square"
+                >
+                    <button
+                        id="btn-y"
+                        data-bit="4"
+                        aria-label="Y"
+                        class="col-start-2 row-start-1 w-full h-full rounded-full bg-[#1b2228] text-[#e3b341] text-xl font-extrabold grid place-items-center transition-transform duration-75"
+                    >
+                        Y
+                    </button>
+                    <button
+                        id="btn-x"
+                        data-bit="8"
+                        aria-label="X"
+                        class="col-start-1 row-start-2 w-full h-full rounded-full bg-[#1b2228] text-[#58a6ff] text-xl font-extrabold grid place-items-center transition-transform duration-75"
+                    >
+                        X
+                    </button>
+                    <button
+                        id="btn-b"
+                        data-bit="2"
+                        aria-label="B"
+                        class="col-start-3 row-start-2 w-full h-full rounded-full bg-[#1b2228] text-[#f85149] text-xl font-extrabold grid place-items-center transition-transform duration-75"
+                    >
+                        B
+                    </button>
+                    <button
+                        id="btn-a"
+                        data-bit="1"
+                        aria-label="A"
+                        class="col-start-2 row-start-3 w-full h-full rounded-full bg-[#1b2228] text-[#3fb950] text-xl font-extrabold grid place-items-center transition-transform duration-75"
+                    >
+                        A
+                    </button>
+                </div>
+            </div>
+        </main>
+
+        <script type="module">
+            import Controller from "./controller.js";
+
+            const statusHost = document.getElementById("status-host");
+            statusHost.textContent = location.host;
+
+            const statusMsg = document.getElementById("status-message");
+            function setStatus(text) {
+                statusMsg.textContent = text;
+            }
+
+            const controller = new Controller(setStatus);
+            controller.connect("analog");
+
+            const allBtns = [...document.querySelectorAll("[data-bit]")];
+            allBtns.forEach(function (btn) {
+                var bit = Number(btn.dataset.bit);
+
+                function press(e) {
+                    e.preventDefault();
+                    btn.classList.add("scale-85");
+                    controller.pressButton(bit);
+                }
+                function release(e) {
+                    e.preventDefault();
+                    btn.classList.remove("scale-85");
+                    controller.releaseButton(bit);
+                }
+
+                btn.addEventListener("pointerdown", press);
+                btn.addEventListener("pointerup", release);
+                btn.addEventListener("pointerleave", release);
+                btn.addEventListener("pointercancel", release);
+            });
+
+            const zone = document.getElementById("joystick-zone");
+            const thumb = document.getElementById("joystick-thumb");
+
+            let joystickActive = false;
+            let joystickPointerId = null;
+
+            function joystickCenter() {
+                const r = zone.getBoundingClientRect();
+                return { cx: r.left + r.width / 2, cy: r.top + r.height / 2, radius: r.width / 2 };
+            }
+
+            function moveThumb(px, py) {
+                const { cx, cy, radius } = joystickCenter();
+                const thumbRadius = radius / 3; // thumb is w-1/3 of zone
+                const maxDist = radius - thumbRadius;
+
+                let dx = px - cx;
+                let dy = py - cy;
+                const dist = Math.hypot(dx, dy);
+
+                if (dist > maxDist) {
+                    dx = (dx / dist) * maxDist;
+                    dy = (dy / dist) * maxDist;
+                }
+
+                thumb.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+
+                const axisX = Math.round((dx / maxDist) * 32767);
+                const axisY = Math.round((dy / maxDist) * 32767);
+                controller.setAxes(axisX, axisY);
+            }
+
+            zone.addEventListener("pointerdown", (e) => {
+                e.preventDefault();
+                if (joystickActive) return;
+                joystickActive = true;
+                joystickPointerId = e.pointerId;
+                zone.setPointerCapture(e.pointerId); // keep events even if finger leaves zone
+                thumb.style.transition = "none"; // no lag during drag
+                moveThumb(e.clientX, e.clientY);
+            });
+
+            zone.addEventListener("pointermove", (e) => {
+                if (!joystickActive || e.pointerId !== joystickPointerId) return;
+                e.preventDefault();
+                moveThumb(e.clientX, e.clientY);
+            });
+
+            function resetJoystick() {
+                if (!joystickActive) return;
+                joystickActive = false;
+                joystickPointerId = null;
+                thumb.style.transition = "transform 150ms ease-out"; // snap back
+                thumb.style.transform = "translate(-50%, -50%)";
+                controller.setAxes([0, 0]);
+            }
+
+            zone.addEventListener("pointerup", resetJoystick);
+            zone.addEventListener("pointercancel", resetJoystick);
+        </script>
+    </body>
+</html>
