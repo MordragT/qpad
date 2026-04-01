@@ -48,7 +48,7 @@ class Controller {
     this.seq++;
     this.ws.send(
       JSON.stringify({
-        InputFrame: {
+        Input: {
           id: this.id,
           seq: this.seq,
           buttons: this.buttons,

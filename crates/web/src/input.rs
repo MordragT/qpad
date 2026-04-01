@@ -31,7 +31,7 @@ use evdevil::{
     event::{Abs, AbsEvent, Key, KeyEvent, KeyState},
     uinput::{AbsSetup, UinputDevice},
 };
-use proto::{ButtonSet, ClientInfo, InputFrame};
+use proto::{ButtonSet, ClientInfo, InputFrame, QpadLayout};
 use smallvec::SmallVec;
 use tracing::{error, info};
 
@@ -39,6 +39,7 @@ use tracing::{error, info};
 pub struct Qpad {
     device: UinputDevice,
     buttons: ButtonSet,
+    layout: QpadLayout,
 }
 
 impl Qpad {
@@ -75,6 +76,7 @@ impl Qpad {
         Ok(Self {
             device,
             buttons: ButtonSet::empty(),
+            layout,
         })
     }
 
@@ -113,8 +115,10 @@ impl Qpad {
             events.push(KeyEvent::new(button.into(), KeyState::RELEASED).into());
         }
 
-        events.push(AbsEvent::new(Abs::X, x_axis as i32).into());
-        events.push(AbsEvent::new(Abs::Y, y_axis as i32).into());
+        if self.layout.axes() {
+            events.push(AbsEvent::new(Abs::X, x_axis as i32).into());
+            events.push(AbsEvent::new(Abs::Y, y_axis as i32).into());
+        }
 
         if let Err(e) = self.device.write(&events) {
             error!("evdev write failed: {e}");

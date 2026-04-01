@@ -155,8 +155,8 @@ impl QpadLayout {
 
     pub fn axes(self) -> bool {
         match self {
-            Self::Classic => true,
-            Self::Analog => false,
+            Self::Classic => false,
+            Self::Analog => true,
         }
     }
 }
