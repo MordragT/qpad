@@ -24,10 +24,14 @@ use std::{net::IpAddr, os::unix::process::CommandExt, sync::mpsc, time::Duration
 
 use clap::Parser;
 use eframe::egui;
-use egui::{ColorImage, Image, TextureHandle, TextureOptions};
-use proto::QpadLayout;
+use egui::{
+    ColorImage, FontData, FontFamily, Image, TextureHandle, TextureOptions,
+    epaint::text::{FontInsert, FontPriority, InsertFontFamily},
+};
+use proto::{ClientInfo, QpadLayout};
 use qrcode::QrCode;
 use tracing::warn;
+use twemoji_assets::svg::SvgTwemojiAsset;
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
 
@@ -134,9 +138,111 @@ impl LauncherApp {
 
 // ── eframe::App ───────────────────────────────────────────────────────────────
 
+const PLAYERS: &[(&str, &str)] = &[
+    ("🦊", "Fox"),
+    ("🐺", "Wolf"),
+    ("🐻", "Bear"),
+    ("🦁", "Lion"),
+    ("🐯", "Tiger"),
+    ("🦅", "Eagle"),
+    ("🦈", "Shark"),
+    ("🦉", "Owl"),
+    ("🐸", "Frog"),
+    ("🐉", "Drake"),
+    ("🦝", "Rascal"),
+    ("🐬", "Finn"),
+    ("🦋", "Blaze"),
+    ("🐙", "Ink"),
+    ("🦌", "Buck"),
+    ("🐆", "Spot"),
+];
+
+fn emoji_source(emoji: &str) -> egui::ImageSource<'static> {
+    let svg = SvgTwemojiAsset::from_emoji(emoji).expect("failed to load twemoji asset");
+
+    egui::ImageSource::Bytes {
+        uri: std::borrow::Cow::Owned(format!("bytes://twemoji/{emoji}.svg")),
+        bytes: egui::load::Bytes::Static(svg.as_bytes()),
+    }
+}
+
+#[derive(Clone, Copy)]
+pub enum BadgeSide {
+    Left,
+    Right,
+}
+
+fn player_badge(ui: &mut egui::Ui, client: &ClientInfo, side: BadgeSide) {
+    let [r, g, b] = client.id.into_inner();
+    let bg = egui::Color32::from_rgb(r, g, b);
+
+    // WCAG-style luma to pick a readable text colour
+    let luma = 0.299 * r as f32 + 0.587 * g as f32 + 0.114 * b as f32;
+    let fg = if luma > 140.0 {
+        egui::Color32::from_black_alpha(210)
+    } else {
+        egui::Color32::WHITE
+    };
+
+    let idx =
+        ((r as usize) ^ (g as usize).rotate_left(3) ^ (b as usize).rotate_left(6)) % PLAYERS.len();
+    let (icon, name) = PLAYERS[idx];
+
+    let emoji = emoji_source(icon);
+
+    ui.horizontal(|ui| {
+        egui::Frame::new()
+            .fill(egui::Color32::WHITE)
+            .corner_radius(egui::CornerRadius::same(14))
+            .inner_margin(egui::Margin::same(4))
+            .outer_margin(egui::Margin::symmetric(80, 16))
+            .show(ui, |ui| {
+                egui::Frame::new()
+                    .fill(bg)
+                    .corner_radius(egui::CornerRadius::same(10))
+                    .inner_margin(egui::Margin::symmetric(10, 8))
+                    .show(ui, |ui| match side {
+                        BadgeSide::Left => {
+                            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                                ui.spacing_mut().item_spacing.x = 8.0;
+
+                                ui.add(
+                                    egui::Image::new(emoji)
+                                        .fit_to_exact_size(egui::Vec2::splat(28.0)),
+                                );
+                                ui.label(egui::RichText::new(name).size(16.0).strong().color(fg));
+                            })
+                        }
+                        BadgeSide::Right => {
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                ui.spacing_mut().item_spacing.x = 8.0;
+
+                                ui.add(
+                                    egui::Image::new(emoji)
+                                        .fit_to_exact_size(egui::Vec2::splat(28.0)),
+                                );
+                                ui.label(egui::RichText::new(name).size(16.0).strong().color(fg));
+                            })
+                        }
+                    });
+            });
+    });
+}
+
 impl eframe::App for LauncherApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         ctx.request_repaint_after(Duration::from_millis(500));
+        ctx.add_font(FontInsert::new(
+            "fredoka",
+            FontData::from_static(include_bytes!(
+                "../assets/fredoka/static/Fredoka-SemiBold.ttf"
+            )),
+            vec![InsertFontFamily {
+                family: FontFamily::Proportional,
+                priority: FontPriority::Highest,
+            }],
+        ));
+        egui_extras::install_image_loaders(ctx);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
@@ -146,92 +252,82 @@ impl eframe::App for LauncherApp {
         }
 
         egui::CentralPanel::default().show_inside(ui, |ui| {
-            ui.add_space(24.0);
-
-            // ── Header ───────────────────────────────────────────────────────
-
-            ui.vertical_centered(|ui| {
-                ui.label(egui::RichText::new("qpad").size(52.0).strong());
-                ui.add_space(4.0);
-                ui.label(
-                    egui::RichText::new("Scan the QR code with your phone to connect")
-                        .size(15.0)
-                        .color(egui::Color32::GRAY),
-                );
-            });
-
-            ui.add_space(20.0);
-            ui.separator();
-            ui.add_space(24.0);
-
-            // ── QR code (left) + player list (right) ─────────────────────────
-
-            ui.columns(2, |cols| {
-                cols[0].vertical_centered(|ui| {
-                    match &self.qr {
-                        Some(qr) => {
-                            ui.add(Image::from_texture(qr));
-                        }
-                        None => {
-                            ui.colored_label(egui::Color32::RED, "QR generation failed");
-                        }
-                    }
-                    ui.add_space(8.0);
-                    ui.label(
-                        egui::RichText::new(&self.qr_url)
-                            .monospace()
-                            .size(11.0)
-                            .color(egui::Color32::GRAY),
-                    );
-                });
-
-                cols[1].vertical(|ui| {
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "Connected players  ({})",
-                            self.connected.len()
-                        ))
-                        .size(20.0)
-                        .strong(),
-                    );
-                    ui.add_space(12.0);
-
-                    if self.connected.is_empty() {
-                        ui.label(
-                            egui::RichText::new("Waiting for players…")
-                                .size(15.0)
-                                .color(egui::Color32::GRAY),
-                        );
-                    } else {
-                        for client in &self.connected {
-                            ui.group(|ui| {
-                                ui.set_min_width(ui.available_width());
-                                ui.label(
-                                    egui::RichText::new(&client.id.to_string())
-                                        .size(18.0)
-                                        .strong(),
-                                );
-                            });
-                            ui.add_space(4.0);
-                        }
-                    }
-                });
-            });
-
-            // ── Launch Game button (only if a game exe was provided) ──────────
-
-            if !self.game.is_empty() {
-                ui.add_space(24.0);
-                ui.separator();
-                ui.add_space(16.0);
-
-                ui.vertical_centered(|ui| {
-                    let btn = egui::Button::new(egui::RichText::new("▶  Launch Game").size(22.0));
-                    if ui.add_sized([280.0, 54.0], btn).clicked() {
+            ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
+                // Launch button pinned to bottom
+                if !self.game.is_empty() {
+                    ui.add_space(20.0);
+                    let btn = egui::Button::new(egui::RichText::new("▶  Launch Game").size(20.0));
+                    if ui.add_sized([260.0, 48.0], btn).clicked() {
                         launch_game(&self.game);
                     }
+                    ui.add_space(24.0);
+                }
+
+                ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                    ui.add_space(16.0);
+
+                    // ── Header ──────────────────────────────────────────────────
+                    ui.vertical_centered(|ui| {
+                        ui.label(egui::RichText::new("qpad").size(64.0).strong());
+                        ui.add_space(16.0);
+                        ui.label(
+                            egui::RichText::new("Scan the QR code with your phone to connect")
+                                .size(20.0)
+                                .color(egui::Color32::GRAY),
+                        );
+                    });
+
+                    ui.add_space(16.0);
+
+                    // ── Badges (left edge) | QR (center) | Badges (right edge) ──
+                    let mid = (self.connected.len() + 1) / 2;
+                    let (left_players, right_players) = self.connected.split_at(mid);
+
+                    ui.columns(3, |cols| {
+                        // Left badges — right-aligned so they hug the QR
+                        cols[0].with_layout(egui::Layout::top_down(egui::Align::Max), |ui| {
+                            ui.add_space(8.0);
+                            for client in left_players {
+                                player_badge(ui, client, BadgeSide::Left);
+                                ui.add_space(8.0);
+                            }
+                        });
+
+                        // QR + URL centered
+                        cols[1].vertical_centered(|ui| {
+                            ui.add_space(128.0);
+
+                            match &self.qr {
+                                Some(qr) => {
+                                    ui.add(
+                                        egui::Image::from_texture(qr)
+                                            .corner_radius(egui::CornerRadius::same(14)),
+                                    );
+                                }
+                                None => {
+                                    ui.colored_label(egui::Color32::RED, "QR generation failed");
+                                }
+                            }
+                            ui.add_space(6.0);
+                            ui.label(
+                                egui::RichText::new(&self.qr_url)
+                                    .monospace()
+                                    .size(10.0)
+                                    .color(egui::Color32::GRAY),
+                            );
+                        });
+
+                        // Right badges — left-aligned so they hug the QR
+                        cols[2].with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
+                            ui.add_space(8.0);
+                            for client in right_players {
+                                player_badge(ui, client, BadgeSide::Right);
+                                ui.add_space(8.0);
+                            }
+                        });
+                    });
                 });
-            }
+            });
         });
     }
 }

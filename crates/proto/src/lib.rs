@@ -87,6 +87,12 @@ impl fmt::Display for ClientId {
     }
 }
 
+impl ClientId {
+    pub fn into_inner(self) -> [u8; 3] {
+        self.0
+    }
+}
+
 #[derive(
     Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, ValueEnum,
 )]
