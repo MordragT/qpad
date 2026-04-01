@@ -1,20 +1,23 @@
 use evdevil::event::Key;
 use serde::{Deserialize, Serialize};
-use std::ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign};
+use std::{
+    fmt,
+    ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[repr(u16)]
 pub enum Button {
-    A = 0,
-    B = 1,
-    Y = 2,
-    X = 3,
-    Start = 4,
-    Select = 5,
-    Up = 6,
-    Down = 7,
-    Left = 8,
-    Right = 9,
+    A = (1 << 0),
+    B = (1 << 1),
+    Y = (1 << 2),
+    X = (1 << 3),
+    Start = (1 << 4),
+    Select = (1 << 5),
+    Up = (1 << 6),
+    Down = (1 << 7),
+    Left = (1 << 8),
+    Right = (1 << 9),
 }
 
 impl BitOr for Button {
@@ -55,6 +58,24 @@ impl From<Button> for Key {
             Button::Left => Key::BTN_DPAD_LEFT,
             Button::Right => Key::BTN_DPAD_RIGHT,
         }
+    }
+}
+
+impl fmt::Display for Button {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let label = match self {
+            Button::A => "A",
+            Button::B => "B",
+            Button::Y => "Y",
+            Button::X => "X",
+            Button::Start => "Start",
+            Button::Select => "Select",
+            Button::Up => "D↑",
+            Button::Down => "D↓",
+            Button::Left => "D←",
+            Button::Right => "D→",
+        };
+        write!(f, "{label}")
     }
 }
 
@@ -197,6 +218,20 @@ impl ButtonSet {
 
     pub fn intersection(self, other: Self) -> Self {
         Self(self.0 & other.0)
+    }
+
+    pub fn into_inner(self) -> u16 {
+        self.0
+    }
+}
+
+impl fmt::Display for ButtonSet {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{{")?;
+        for button in self.into_iter() {
+            write!(f, " {button}")?;
+        }
+        write!(f, " }}")
     }
 }
 

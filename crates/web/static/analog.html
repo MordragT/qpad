@@ -5,10 +5,19 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
         <title>qpad</title>
         <link rel="manifest" href="./manifest.json" />
+        <style type="text/tailwindcss">
+            @font-face {
+                font-family: "Fredoka";
+                src: url("./Fredoka-SemiBold.ttf") format("truetype");
+                font-weight: 600;
+                font-style: normal;
+                font-display: swap;
+            }
+        </style>
         <link rel="stylesheet" href="./style.css" />
     </head>
 
-    <body class="min-h-svh bg-[#0d1117] text-[#e6edf3] font-sans touch-manipulation select-none">
+    <body class="min-h-svh bg-[#0d1117] text-[#e6edf3] font-['Fredoka'] touch-manipulation select-none">
         <div
             id="status"
             class="w-full h-8 bg-[#071018] border-b border-[#10161a] flex items-center px-4 text-xs text-[#9aa6b2]"
@@ -25,13 +34,14 @@
 
             <!-- Center buttons: floats above clusters in portrait, sits between them in landscape -->
             <div class="portrait:mb-6 portrait:self-center landscape:order-2 flex flex-col items-center gap-3">
+                <div id="client-badge" class="w-8 h-8 rounded-full ring-1 ring-white/10"></div>
                 <button
                     id="btn-select"
                     data-bit="32"
                     aria-label="Select"
                     class="px-4 py-2 rounded-md bg-[#13171c] text-[#9aa6b2] text-sm hover:bg-[#1f2933] transition-colors duration-75"
                 >
-                    ⊟ Select
+                    ☰ Select
                 </button>
                 <button
                     id="btn-start"
@@ -39,7 +49,7 @@
                     aria-label="Start"
                     class="px-4 py-2 rounded-md bg-[#13171c] text-[#9aa6b2] text-sm hover:bg-[#1f2933] transition-colors duration-75"
                 >
-                    ⊞ Start
+                    ▶ Start
                 </button>
             </div>
 
@@ -115,6 +125,10 @@
 
             const controller = new Controller(setStatus);
             controller.connect("analog");
+
+            const badge = document.getElementById("client-badge");
+            const color = controller.id;
+            badge.style.backgroundColor = `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
 
             const allBtns = [...document.querySelectorAll("[data-bit]")];
             allBtns.forEach(function (btn) {

@@ -33,7 +33,7 @@ use evdevil::{
 };
 use proto::{ButtonSet, ClientInfo, InputFrame};
 use smallvec::SmallVec;
-use tracing::error;
+use tracing::{error, info};
 
 #[derive(Debug)]
 pub struct Qpad {
@@ -50,9 +50,17 @@ impl Qpad {
             connected_at: _,
         } = info;
 
+        info!(
+            %id,
+            %layout,
+            "opening controller",
+        );
+
+        let keys = layout.buttons().into_iter().map(Key::from);
+
         let mut device = UinputDevice::builder()?
             .with_input_id(layout.input_id())?
-            .with_keys(layout.buttons().into_iter().map(Key::from))?;
+            .with_keys(keys)?;
 
         if layout.axes() {
             device = device.with_abs_axes([

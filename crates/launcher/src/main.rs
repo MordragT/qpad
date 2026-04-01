@@ -235,7 +235,7 @@ impl eframe::App for LauncherApp {
         ctx.add_font(FontInsert::new(
             "fredoka",
             FontData::from_static(include_bytes!(
-                "../assets/fredoka/static/Fredoka-SemiBold.ttf"
+                "../../../assets/fredoka/static/Fredoka-SemiBold.ttf"
             )),
             vec![InsertFontFamily {
                 family: FontFamily::Proportional,
@@ -255,12 +255,12 @@ impl eframe::App for LauncherApp {
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
                 // Launch button pinned to bottom
                 if !self.game.is_empty() {
-                    ui.add_space(20.0);
+                    ui.add_space(16.0);
                     let btn = egui::Button::new(egui::RichText::new("▶  Launch Game").size(20.0));
                     if ui.add_sized([260.0, 48.0], btn).clicked() {
                         launch_game(&self.game);
                     }
-                    ui.add_space(24.0);
+                    ui.add_space(16.0);
                 }
 
                 ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {

@@ -50,6 +50,7 @@ async fn main() {
         .route("/classic", routing::get(classic))
         .route("/analog", routing::get(analog))
         .route("/manifest.json", routing::get(manifest))
+        .route("/Fredoka-SemiBold.ttf", routing::get(fredoka))
         .route("/style.css", routing::get(style_css))
         .route("/controller.js", routing::get(controller_js))
         .route("/ws", routing::get(ws::ws_handler))
@@ -91,6 +92,16 @@ async fn manifest() -> Response {
         HeaderValue::from_static("application/manifest+json"),
     );
 
+    res
+}
+
+const FREDOKA: &[u8] = include_bytes!("../../../assets/fredoka/static/Fredoka-SemiBold.ttf");
+
+async fn fredoka() -> Response {
+    let mut res = Response::new(Body::from(FREDOKA));
+
+    res.headers_mut()
+        .insert(header::CONTENT_TYPE, HeaderValue::from_static("font/ttf"));
     res
 }
 
