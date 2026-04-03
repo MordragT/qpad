@@ -199,14 +199,14 @@ pub struct Roster {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct InputFrame {
     pub id: ClientId,
-    /// Monotonically-increasing per-client sequence number (starts at 1).
-    pub seq: u64,
     /// Bitmask of currently-pressed buttons.
     pub buttons: ButtonSet,
     /// X axis for analog stick
     pub x_axis: i16,
     /// Y axis for analog stick
     pub y_axis: i16,
+    /// Unix timestamp in milliseconds when the frame was captured.
+    pub timestamp: u64,
 }
 
 // ── Envelope types ────────────────────────────────────────────────────────────

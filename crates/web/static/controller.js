@@ -2,7 +2,6 @@ class Controller {
   constructor(setStatus) {
     this.ws = null;
     this.id = Array.from(crypto.getRandomValues(new Uint8Array(3)));
-    this.seq = 0;
     this.buttons = 0;
     this.xAxis = 0;
     this.yAxis = 0;
@@ -45,15 +44,14 @@ class Controller {
 
   sendInput() {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-    this.seq++;
     this.ws.send(
       JSON.stringify({
         Input: {
           id: this.id,
-          seq: this.seq,
           buttons: this.buttons,
           x_axis: this.xAxis,
           y_axis: this.yAxis,
+          timestamp: Date.now(),
         },
       }),
     );

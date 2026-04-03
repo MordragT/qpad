@@ -42,7 +42,6 @@
 
         port = lib.mkOption {
           type = lib.types.port;
-          default = 3000;
           description = ''
             TCP port the qpad web server listens on.
             Phones connecting via the QR code will reach this port.

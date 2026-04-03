@@ -80,7 +80,7 @@ async fn dispatch(bytes: &[u8], state: &AppState, session: &mut Option<SessionSt
             *session = Some(SessionState { info, qpad });
         }
         ClientMsg::Input(buttons) => {
-            debug!(id = %buttons.id, seq = buttons.seq, "input frame");
+            debug!(id = %buttons.id, timestamp = %buttons.timestamp, "input frame");
 
             let Some(session) = session else {
                 debug!("received input frame before registration, ignoring");

@@ -138,6 +138,8 @@ impl LauncherApp {
 
 // ── eframe::App ───────────────────────────────────────────────────────────────
 
+// TODO put in proto and make 3 level name list e.g. ["The", "A"], ["Greatest", "Latest"], ["King", "Tiger"]
+
 const PLAYERS: &[(&str, &str)] = &[
     ("🦊", "Fox"),
     ("🐺", "Wolf"),

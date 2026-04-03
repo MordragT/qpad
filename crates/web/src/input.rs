@@ -90,16 +90,6 @@ impl Qpad {
             ..
         } = frame;
 
-        if self.buttons == new_buttons
-            && x_axis <= 128
-            && x_axis >= -128
-            && y_axis <= 128
-            && y_axis >= -128
-        {
-            // no change since last frame, skip writing events
-            return;
-        }
-
         // TODO: make this less magic with type safety
         // classic max events = 8
         // analog max events = 6 buttons + 2 axes = 8
