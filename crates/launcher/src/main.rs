@@ -57,6 +57,10 @@ struct Args {
     /// Optional path to the game executable.
     #[arg(value_name = "GAME", last = true)]
     game: Vec<String>,
+
+    /// Fullscreen mode
+    #[arg(long, default_value_t = false)]
+    fullscreen: bool,
 }
 
 // ── LAN IP detection ──────────────────────────────────────────────────────────
@@ -365,7 +369,8 @@ fn main() -> eframe::Result<()> {
         port,
         host,
         game,
-        layout: kind,
+        layout,
+        fullscreen,
     } = Args::parse();
 
     // Resolve the host IP to advertise in the QR code.
@@ -382,10 +387,10 @@ fn main() -> eframe::Result<()> {
     // Internal API calls always use loopback (launcher and server co-locate).
     let api_base = format!("http://127.0.0.1:{}", port);
     // QR code URL uses the LAN IP so phones on the same network can connect.
-    let qr_url = format!("http://{}:{}/{}", lan_host, port, kind);
+    let qr_url = format!("http://{}:{}/{}", lan_host, port, layout);
 
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_fullscreen(true),
+        viewport: egui::ViewportBuilder::default().with_fullscreen(fullscreen),
         ..Default::default()
     };
 
