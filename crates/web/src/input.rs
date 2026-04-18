@@ -33,7 +33,7 @@ use evdevil::{
 };
 use proto::{ButtonSet, ClientInfo, InputFrame, QpadLayout};
 use smallvec::SmallVec;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 #[derive(Debug)]
 pub struct Qpad {
@@ -65,8 +65,18 @@ impl Qpad {
 
         if layout.axes() {
             device = device.with_abs_axes([
-                AbsSetup::new(Abs::X, AbsInfo::new(-32767, 32767).with_flat(128)),
-                AbsSetup::new(Abs::Y, AbsInfo::new(-32767, 32767).with_flat(128)),
+                AbsSetup::new(
+                    Abs::X,
+                    AbsInfo::new(-32767, 32767)
+                        .with_flat(128)
+                        .with_resolution(16),
+                ),
+                AbsSetup::new(
+                    Abs::Y,
+                    AbsInfo::new(-32767, 32767)
+                        .with_flat(128)
+                        .with_resolution(16),
+                ),
             ])?;
         }
 
@@ -87,8 +97,11 @@ impl Qpad {
             buttons: new_buttons,
             x_axis,
             y_axis,
+            timestamp,
             ..
         } = frame;
+
+        debug!(%timestamp, "handling input frame");
 
         // TODO: make this less magic with type safety
         // classic max events = 8

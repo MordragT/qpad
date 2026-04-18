@@ -30,7 +30,8 @@ class Controller {
 
     this.ws.onclose = () => {
       this.buttons = 0;
-      this.axes = [];
+      this.xAxis = 0;
+      this.yAxis = 0;
       this.ws = null;
     };
 

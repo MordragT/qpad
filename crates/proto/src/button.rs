@@ -213,6 +213,10 @@ impl ButtonSet {
     }
 
     pub fn difference(self, other: Self) -> Self {
+        Self(self.0 & !other.0)
+    }
+
+    pub fn symmetric_difference(self, other: Self) -> Self {
         Self(self.0 ^ other.0)
     }
 
@@ -256,7 +260,8 @@ impl Iterator for ButtonSetIter {
     type Item = Button;
 
     fn next(&mut self) -> Option<Self::Item> {
-        while self.index < 16 {
+        // TODO: use a enum crate or something to make this safer
+        while self.index < 10 {
             let bit = 1 << self.index;
             self.index += 1;
 

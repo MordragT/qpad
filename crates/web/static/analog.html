@@ -205,7 +205,7 @@
                 joystickPointerId = null;
                 thumb.style.transition = "transform 150ms ease-out"; // snap back
                 thumb.style.transform = "translate(-50%, -50%)";
-                controller.setAxes([0, 0]);
+                controller.setAxes(0, 0);
             }
 
             zone.addEventListener("pointerup", resetJoystick);
