@@ -26,6 +26,7 @@
         # GUI libs are needed at compile time for qpad-launcher (eframe/egui).
         # qpad-web is headless and ignores them.
         buildInputs = with pkgs; [
+          vulkan-loader
           wayland
           wayland-protocols
           libxkbcommon
