@@ -16,3 +16,4 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 clap               = { version = "4", features = ["derive"] }
 smallvec           = "1.15"
 evdevil            = "0.4"
+thiserror          = "2"

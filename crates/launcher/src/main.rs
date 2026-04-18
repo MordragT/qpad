@@ -23,9 +23,12 @@
 use std::{net::IpAddr, os::unix::process::CommandExt, sync::mpsc, time::Duration};
 
 use clap::Parser;
-use eframe::egui;
+use eframe::{
+    egui,
+    wgpu::rwh::{HasWindowHandle, RawWindowHandle},
+};
 use egui::{
-    ColorImage, FontData, FontFamily, Image, TextureHandle, TextureOptions,
+    ColorImage, FontData, FontFamily, TextureHandle, TextureOptions,
     epaint::text::{FontInsert, FontPriority, InsertFontFamily},
 };
 use proto::{ClientInfo, QpadLayout};
@@ -362,6 +365,59 @@ fn poll_roster(api_base: &str) -> Option<Vec<proto::ClientInfo>> {
         .map(|r| r.clients)
 }
 
+#[derive(Debug, thiserror::Error)]
+enum X11Error {
+    #[error(transparent)]
+    Connection(#[from] x11rb::errors::ConnectionError),
+    #[error(transparent)]
+    Connect(#[from] x11rb::errors::ConnectError),
+    #[error(transparent)]
+    Reply(#[from] x11rb::errors::ReplyError),
+}
+
+fn set_steam_game_atom(cc: &eframe::CreationContext) -> Result<(), X11Error> {
+    use x11rb::{
+        connection::Connection,
+        protocol::xproto::{AtomEnum, ConnectionExt as _, PropMode},
+        rust_connection::RustConnection,
+        wrapper::ConnectionExt as _,
+    };
+
+    let Some(app_id) = std::env::var("SteamAppId")
+        .ok()
+        .and_then(|s| s.parse::<u32>().ok())
+    else {
+        return Ok(());
+    };
+
+    let Ok(handle) = cc.window_handle() else {
+        return Ok(());
+    };
+
+    let window_id: u32 = match handle.as_raw() {
+        RawWindowHandle::Xcb(h) => h.window.get(),
+        RawWindowHandle::Xlib(h) => h.window as u32,
+        _ => return Ok(()),
+    };
+
+    let (conn, _) = RustConnection::connect(None)?;
+
+    let cookie = conn.intern_atom(false, b"STEAM_GAME")?;
+    let reply = cookie.reply()?;
+
+    let _ = conn.change_property32(
+        PropMode::REPLACE,
+        window_id,
+        reply.atom,
+        AtomEnum::CARDINAL,
+        &[app_id],
+    );
+
+    conn.flush()?;
+
+    Ok(())
+}
+
 fn main() -> eframe::Result<()> {
     tracing_subscriber::fmt::init();
 
@@ -397,6 +453,9 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "qpad",
         options,
-        Box::new(move |cc| Ok(Box::new(LauncherApp::new(cc, api_base, qr_url, game)))),
+        Box::new(move |cc| {
+            set_steam_game_atom(cc)?;
+            Ok(Box::new(LauncherApp::new(cc, api_base, qr_url, game)))
+        }),
     )
 }

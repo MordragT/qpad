@@ -2420,10 +2420,12 @@ dependencies = [
  "image",
  "proto",
  "qrcode",
+ "thiserror 2.0.18",
  "tracing",
  "tracing-subscriber",
  "twemoji-assets",
  "ureq",
+ "x11rb",
 ]
 
 [[package]]
