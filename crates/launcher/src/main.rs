@@ -23,7 +23,11 @@
 use std::{net::IpAddr, os::unix::process::CommandExt, sync::mpsc, time::Duration};
 
 use clap::Parser;
-use eframe::{egui, egui_wgpu::WgpuConfiguration, wgpu::PresentMode};
+use eframe::{
+    egui,
+    // egui_wgpu::WgpuConfiguration,
+    // wgpu::PresentMode
+};
 use egui::{
     ColorImage, FontData, FontFamily, TextureHandle, TextureOptions,
     epaint::text::{FontInsert, FontPriority, InsertFontFamily},
@@ -391,10 +395,10 @@ fn main() -> eframe::Result<()> {
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_fullscreen(fullscreen),
-        wgpu_options: WgpuConfiguration {
-            present_mode: PresentMode::AutoNoVsync,
-            ..Default::default()
-        },
+        // wgpu_options: WgpuConfiguration {
+        //     present_mode: PresentMode::AutoNoVsync,
+        //     ..Default::default()
+        // },
         ..Default::default()
     };
 
