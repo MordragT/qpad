@@ -35,6 +35,36 @@
       launcherWrapper = pkgs.writeShellScriptBin "qpad-launcher" ''
         exec ${qpad}/bin/qpad-launcher --port ${toString cfg.port} "$@"
       '';
+
+      steamLauncherWrapper = pkgs.writeShellScriptBin "qpad-launcher" ''
+        if [[ "$XDG_SESSION_TYPE" != "x11" ]]; then
+          echo "qpad-wrapper: STEAM_GAME atom is only supported in X11 sessions, skipping" >&2
+          exec ${qpad}/bin/qpad-launcher --port ${toString cfg.port} "$@"
+        fi
+
+        # Launch qpad-launcher in background with all args passed through
+        ${qpad}/bin/qpad-launcher --port ${toString cfg.port} "$@" &
+        LAUNCHER_PID=$!
+
+        # Wait for the window to appear (poll xdotool, timeout after 10s)
+        WINDOW_ID=""
+        for i in $(seq 1 20); do
+          WINDOW_ID=$(${pkgs.xdotool}/bin/xdotool search --pid "$LAUNCHER_PID" --class "qpad-launcher" 2>/dev/null | head -1)
+            [[ -n "$WINDOW_ID" ]] && break
+            sleep 0.5
+        done
+
+        if [[ -z "$WINDOW_ID" ]]; then
+            echo "qpad-wrapper: could not find launcher window, skipping STEAM_GAME atom" >&2
+        else
+            WINDOW_HEX=$(printf "0x%x" "$WINDOW_ID")
+            echo "qpad-wrapper: setting STEAM_GAME=$SteamAppId on window $WINDOW_HEX" >&2
+            ${pkgs.xprop}/bin/xprop -id "$WINDOW_ID" -f STEAM_GAME 32c -set STEAM_GAME "$SteamAppId"
+        fi
+
+        # Wait for the launcher to exit (it will execv the game, so this process ends naturally)
+        wait "$LAUNCHER_PID"
+      '';
     in
     {
       options.mordrag.services.qpad = {
@@ -138,7 +168,7 @@
         };
 
         environment.systemPackages = [ launcherWrapper ];
-        programs.steam.extraPackages = [ launcherWrapper ];
+        programs.steam.extraPackages = [ steamLauncherWrapper ];
 
         networking.firewall.allowedTCPPorts = lib.optionals cfg.openFirewall [ cfg.port ];
       };
