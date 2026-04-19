@@ -267,7 +267,9 @@ impl eframe::App for LauncherApp {
                 if !self.game.is_empty() {
                     ui.add_space(16.0);
                     let btn = egui::Button::new(egui::RichText::new("▶  Launch Game").size(20.0));
-                    if ui.add_sized([260.0, 48.0], btn).clicked() {
+                    let resp = ui.add_sized([260.0, 48.0], btn);
+                    resp.request_focus();
+                    if resp.clicked() {
                         launch_game(&self.game);
                     }
                     ui.add_space(16.0);
